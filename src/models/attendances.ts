@@ -37,7 +37,7 @@ export class AttendancesModel {
 
   getInitialLog(knex: Knex) {
     return knex('work_time_allow')
-      .orderByRaw('concat(iyear, imonth DESC')
+      .orderByRaw('concat(iyear, imonth) DESC')
       .limit(10);
   }
 
