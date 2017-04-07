@@ -6,29 +6,29 @@ import * as crypto from 'crypto';
 import { IConnection } from 'mysql';
 import { Jwt } from '../models/jwt';
 import { LoginModel } from '../models/login';
-import { Connection } from '../models/connection';
 
 const router = express.Router();
 const jwt = new Jwt();
 const loginModel = new LoginModel();
-const connection = new Connection();
 
 router.post('/', (req, res, next) => {
   let username = req.body.username;
   let password = req.body.password;
   let userType = req.body.userType;
 
+  let db = req.db;
+
   if (username && password && userType) {
     let encPassword = crypto.createHash('md5').update(password).digest('hex');
 
-    connection.getConnection()
-      .then((conn: IConnection) => {
-        if (userType == '1') {
-          return loginModel.adminLogin(conn, username, encPassword);
-        } else {
-          return loginModel.userLogin(conn, username, encPassword);
-        }
-      })
+    let promise: any;
+    if (userType == '1') {
+      promise = loginModel.adminLogin(db, username, encPassword);
+    } else {
+      promise = loginModel.userLogin(db, username, encPassword);
+    }
+
+    promise
       .then((results: any) => {
         if (results.length) {
           const payload = { userType: userType, fullname: results[0].fullname, employeeCode: results[0].employee_code };

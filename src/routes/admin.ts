@@ -16,13 +16,7 @@ import * as json2xls from 'json2xls';
 import * as _ from 'lodash';
 
 import { unitOfTime } from 'moment';
-
-import { IConnection } from 'mysql';
-
-import { Connection } from '../models/connection';
 import { AttendancesModel } from '../models/attendances';
-
-const connection = new Connection();
 const attendancesModel = new AttendancesModel();
 
 // const upload = multer({ dest: 'uploads/' })
@@ -45,7 +39,8 @@ router.post('/upload', upload.single('file'), (req, res, next) => {
   const ext = path.extname(csvFile);
   const startDate = req.body.start;
   const endDate = req.body.end;
-  // console.log(req.body);
+
+  const db = req.db;
 
   if (ext === '.csv') {
     let csvData = null;
@@ -59,25 +54,27 @@ router.post('/upload', upload.single('file'), (req, res, next) => {
     let _data = csvData.toString().split("\n");
     delete _data[0];
     let items = [];
-
+    
     _data.forEach((v, i) => {
       if (v) {
-        let arrItem = v.toString().split(",");
+        let arrItem = v.toString().split("\t");
         // console.log(arrItem);
-
-        let employeeCode = arrItem[5];
-        let checkinDate = moment(arrItem[3], 'DD/MM/YYYY HH:mm:ss').format('YYYY-MM-DD');
-        let checkinTime = moment(arrItem[3], 'DD/MM/YYYY HH:mm:ss').format('HH:mm:ss');
+        let employeeCode: any = parseInt(arrItem[2]);
+        let checkinDate = moment(arrItem[8], 'YYYY/MM/DD HH:mm:ss').format('YYYY-MM-DD');
+        let checkinTime = moment(arrItem[8], 'YYYY/MM/DD HH:mm:ss').format('HH:mm:ss');
         let importedDate = moment().format('YYYY-MM-DD HH:mm:ss');
+        // console.log(arrItem[8], checkinDate);        
+        
+        if (employeeCode > 0) {
+          let obj: any = {};
+          obj.employee_code = employeeCode.toString();
+          obj.checkin_date = checkinDate;
+          obj.checkin_time = checkinTime;
+          obj.imported_date = importedDate;
 
-        if (employeeCode) {
-          // console.log(arrItem[3])
-          let obj = [];
-          obj.push(employeeCode);
-          obj.push(checkinDate);
-          obj.push(checkinTime);
-          obj.push(importedDate);
-
+          // items.push(obj);
+          // console.log(checkinDate);
+          // console.log(startDate, endDate);
           let isBetween = moment(checkinDate).isBetween(startDate, endDate, null, '[]');
           if (isBetween) {
             items.push(obj);
@@ -87,27 +84,21 @@ router.post('/upload', upload.single('file'), (req, res, next) => {
 
     });
 
-    // console.log(items);
-
+    console.log(_data.length);
+    console.log(items.length);
     if (items.length) {
-      let total = 0;
-      let _conn;
+      let total = items.length;
 
-      connection.getConnection()
-        .then((conn: IConnection) => {
-          _conn = conn;
-          return attendancesModel.removeAttendances(_conn, startDate, endDate)
-        })
+      attendancesModel.removeAttendances(db, startDate, endDate)
         .then(() => {
-          return attendancesModel.saveAttendances(_conn, items);
+          return attendancesModel.saveAttendances(db, items);
         })
         .then((results: any) => {
-          total = results.affectedRows;
           let importedAt = moment().format('YYYY-MM-DD HH:mm:ss');
-          return attendancesModel.saveImportedLog(_conn, importedAt, startDate, endDate, total);
+          return attendancesModel.saveImportedLog(db, importedAt, startDate, endDate, total);
         })
+
         .then(() => {
-          _conn.release();
           fse.removeSync(csvFile);
           res.send({ ok: true, total: total });
         })
@@ -126,109 +117,99 @@ router.post('/upload', upload.single('file'), (req, res, next) => {
 });
 
 router.get('/imported-logs', (req, res, next) => {
+  let db = req.db;
 
-  connection.getConnection()
-    .then((conn: IConnection) => {
-      attendancesModel.getImportedLog(conn)
-        .then((results: any) => {
-          conn.release();
-          let data = [];
-          results.forEach(v => {
-            let obj: any = {};
-            obj.importedAt = `${moment(v.imported_at).format('D')} ${moment(v.imported_at).locale('th').format('MMM')} ${moment(v.imported_at).get('year') + 543} ${moment(v.imported_at).format('HH:mm')}`;
-            obj.start = `${moment(v.start_date).format('D')} ${moment(v.start_date).locale('th').format('MMM')} ${moment(v.start_date).get('year') + 543}`;
-            obj.end = `${moment(v.end_date).format('D')} ${moment(v.end_date).locale('th').format('MMM')} ${moment(v.end_date).get('year') + 543}`;
-            obj.total = v.total;
-            data.push(obj);
-          });
+  attendancesModel.getImportedLog(db)
+    .then((results: any) => {
+      let data = [];
+      results.forEach(v => {
+        let obj: any = {};
+        obj.importedAt = `${moment(v.imported_at).format('D')} ${moment(v.imported_at).locale('th').format('MMM')} ${moment(v.imported_at).get('year') + 543} ${moment(v.imported_at).format('HH:mm')}`;
+        obj.start = `${moment(v.start_date).format('D')} ${moment(v.start_date).locale('th').format('MMM')} ${moment(v.start_date).get('year') + 543}`;
+        obj.end = `${moment(v.end_date).format('D')} ${moment(v.end_date).locale('th').format('MMM')} ${moment(v.end_date).get('year') + 543}`;
+        obj.total = v.total;
+        data.push(obj);
+      });
 
-          res.send({ ok: true, rows: data });
-        })
-        .catch(error => {
-          console.log(error);
-          res.send({
-            ok: false,
-            code: 500,
-            message: "Server error!"
-          })
-        });
+      res.send({ ok: true, rows: data });
     })
+    .catch(error => {
+      console.log(error);
+      res.send({
+        ok: false,
+        code: 500,
+        message: "Server error!"
+      })
+    });
 });
 
 router.get('/process-logs', (req, res, next) => {
+  let db = req.db;
 
-  connection.getConnection()
-    .then((conn: IConnection) => {
-      attendancesModel.getProcessLog(conn)
-        .then((results: any) => {
-          conn.release();
-          let data = [];
-          results.forEach(v => {
-            let obj: any = {};
-            obj.processAt = `${moment(v.process_at).format('D')} ${moment(v.process_at).locale('th').format('MMM')} ${moment(v.process_at).get('year') + 543} ${moment(v.process_at).format('HH:mm')}`;
-            obj.month = `${moment(v.start_date).locale('th').format('MMMM')} ${moment(v.start_date).get('year') + 543}`;
-            // obj.end = `${moment(v.end_date).format('D')} ${moment(v.end_date).locale('th').format('MMM')} ${moment(v.end_date).get('year') + 543}`;
-            obj.total = v.total;
-            data.push(obj);
-          });
+  attendancesModel.getProcessLog(db)
+    .then((results: any) => {
+      let data = [];
+      results.forEach(v => {
+        let obj: any = {};
+        obj.processAt = `${moment(v.process_at).format('D')} ${moment(v.process_at).locale('th').format('MMM')} ${moment(v.process_at).get('year') + 543} ${moment(v.process_at).format('HH:mm')}`;
+        obj.month = `${moment(v.start_date).locale('th').format('MMMM')} ${moment(v.start_date).get('year') + 543}`;
+        // obj.end = `${moment(v.end_date).format('D')} ${moment(v.end_date).locale('th').format('MMM')} ${moment(v.end_date).get('year') + 543}`;
+        obj.total = v.total;
+        data.push(obj);
+      });
 
-          res.send({ ok: true, rows: data });
-        })
-        .catch(error => {
-          console.log(error);
-          res.send({
-            ok: false,
-            code: 500,
-            message: "Server error!"
-          })
-        });
+      res.send({ ok: true, rows: data });
     })
+    .catch(error => {
+      console.log(error);
+      res.send({
+        ok: false,
+        code: 500,
+        message: "Server error!"
+      })
+    });
 });
 
 router.get('/initial-logs', (req, res, next) => {
+  let db = req.db;
 
-  connection.getConnection()
-    .then((conn: IConnection) => {
-      attendancesModel.getInitialLog(conn)
-        .then((results: any) => {
-          conn.release();
-          let data = [];
-          results.forEach(v => {
-            let obj: any = {};
-            obj.initialAt = `${moment(v.initial_at).format('D')} ${moment(v.initial_at).locale('th').format('MMM')} ${moment(v.initial_at).get('year') + 543} ${moment(v.initial_at).format('HH:mm')}`;
-            let m = `${v.iyear}-${v.imonth}`
-            obj.month = `${moment(m, 'YYYY-MM').locale('th').format('MMMM')} ${moment(m, 'YYYY-MM').get('year') + 543}`;
-            data.push(obj);
-          });
+  attendancesModel.getInitialLog(db)
+    .then((results: any) => {
+      let data = [];
+      results.forEach(v => {
+        let obj: any = {};
+        obj.initialAt = `${moment(v.initial_at).format('D')} ${moment(v.initial_at).locale('th').format('MMM')} ${moment(v.initial_at).get('year') + 543} ${moment(v.initial_at).format('HH:mm')}`;
+        let m = `${v.iyear}-${v.imonth}`
+        obj.month = `${moment(m, 'YYYY-MM').locale('th').format('MMMM')} ${moment(m, 'YYYY-MM').get('year') + 543}`;
+        data.push(obj);
+      });
 
-          res.send({ ok: true, rows: data });
-        })
-        .catch(error => {
-          console.log(error);
-          res.send({
-            ok: false,
-            code: 500,
-            message: "Server error!"
-          })
-        });
+      res.send({ ok: true, rows: data });
     })
+    .catch(error => {
+      console.log(error);
+      res.send({
+        ok: false,
+        code: 500,
+        message: "Server error!"
+      })
+    });
 });
 
 router.post('/process-summary', (req, res, next) => {
   let start = req.body.start;
   let end = req.body.end;
+  let db = req.db;
+
   if (start && end) {
-    connection.getConnection()
-      .then((conn: IConnection) => {
-        // console.log('Remove old data')
-        return attendancesModel.processSummary(conn, start, end)
-      })
+    attendancesModel.processSummary(db, start, end)
       .then((results: any) => {
-        res.send({ ok: true, rows: results });
+        res.send({ ok: true, rows: results[0] });
       })
       .catch(err => {
         res.send({ ok: false, message: err })
       })
+
   } else {
     res.send({ ok: false, message: 'ข้อมูลไม่ครบถ้วน' })
   }
@@ -238,6 +219,7 @@ router.post('/process-summary', (req, res, next) => {
 router.post('/process', (req, res, next) => {
   let y = req.body.y;
   let m = req.body.m;
+  let db = req.db;
 
   if (y && m) {
     let ym = `${y}-${m}`;
@@ -245,30 +227,25 @@ router.post('/process', (req, res, next) => {
     let unitTime: unitOfTime.StartOf = 'month';
     let start = moment(_yearMonth).startOf(unitTime).format('YYYY-MM-DD');
     let end = moment(_yearMonth).endOf(unitTime).format('YYYY-MM-DD');
-
-    let _conn: any;
     let total = 0;
 
-    connection.getConnection()
-      .then((conn: IConnection) => {
-        _conn = conn;
-        // console.log('Remove old data')
-        return attendancesModel.removeOldProcess(_conn, start, end)
-      })
+    attendancesModel.removeOldProcess(db, start, end)
       .then((results: any) => {
         // console.log('removed!')
-        return attendancesModel.doProcess(_conn, start, end)
+        return attendancesModel.doProcess(db, start, end)
       })
       .then((results: any) => {
+        // console.log(results);
         let processAt = moment().format('YYYY-MM-DD HH:mm:ss');
-        total = results.affectedRows;
+        total = results[0].affectedRows;
         // console.log(processAt, start, end, total)
-        return attendancesModel.saveProcessLog(_conn, processAt, start, end, total);
+        return attendancesModel.saveProcessLog(db, processAt, start, end, total);
       })
       .then(() => {
         res.send({ ok: true, total: total });
       })
       .catch(err => {
+        console.log(err);
         res.send({ ok: false, message: err })
       })
   } else {
@@ -278,8 +255,9 @@ router.post('/process', (req, res, next) => {
 });
 
 router.post('/initial', (req, res, next) => {
-  let y = req.body.y;
-  let m = req.body.m;
+  const y = req.body.y;
+  const m = req.body.m;
+  const db = req.db;
 
   if (y && m) {
     let ym = `${y}-${m}`;
@@ -290,57 +268,60 @@ router.post('/initial', (req, res, next) => {
 
     let employees = [];
     let services = [];
-    let _conn = null;
+
     let total = 0;
 
-    connection.getConnection()
-      .then((conn: IConnection) => {
-        // get employees
-        _conn = conn;
-        attendancesModel.getInitialEmployees(conn, start, end)
-          .then((results: any) => {
-            if (results.length) {
-              results.forEach(v => {
-                employees.push(v.employee_code);
-              });
+    // console.log(req.body);    
+    // get employees
+    attendancesModel.getInitialEmployees(db, start, end)
+      .then((results: any) => {
 
-              let _endDate = moment(end, 'YYYY-MM-DD').get('date');
-              let serviceDates = [];
-              for (let i = 0; i <= _endDate - 1; i++) {
-                let _date = moment(start, 'YYYY-MM-DD').add(i, "days").format("YYYY-MM-DD");
-                serviceDates.push(_date);
-              }
+        total = results[0].length;
 
-              employees.forEach((v) => {
-                serviceDates.forEach(d => {
-                  let obj = [];
-                  obj.push(v);
-                  obj.push(d);
-                  obj.push('1');
-                  obj.push('N');
-                  services.push(obj);
-                });
-              });
-              attendancesModel.saveInitial(_conn, services)
-                .then((results: any) => {
-                  total = results.affectedRows;
-                  let initialAt = moment().format('YYYY-MM-DD HH:mm:ss');
-                  return attendancesModel.saveInitialLog(_conn, initialAt, y, m);
-                })
-                .then(() => {
-                  res.send({ ok: true, total: total })
-                })
-                .catch(err => {
-                  res.send({ ok: false, message: err })
-                })
-            } else {
-              res.send({ ok: true, total: 0 });
-            }
-          })
-          .catch(err => {
-            res.send({ ok: false, message: err })
-          })
-      });
+        if (results[0].length) {
+          results[0].forEach(v => {
+            employees.push(v.employee_code);
+          });
+
+          let _endDate = moment(end, 'YYYY-MM-DD').get('date');
+          let serviceDates = [];
+          for (let i = 0; i <= _endDate - 1; i++) {
+            let _date = moment(start, 'YYYY-MM-DD').add(i, "days").format("YYYY-MM-DD");
+            serviceDates.push(_date);
+          }
+
+          employees.forEach((v) => {
+            /**
+             * employee_code, work_date, work_type, is_process
+             */
+            serviceDates.forEach(d => {
+              let obj: any = {};
+              obj.employee_code = v;
+              obj.work_date = d;
+              obj.work_type = '1';
+              obj.is_process = 'N';
+              services.push(obj);
+            });
+          });
+          attendancesModel.saveInitial(db, services)
+            .then((results: any) => {
+              console.log(results);
+              let initialAt = moment().format('YYYY-MM-DD HH:mm:ss');
+              return attendancesModel.saveInitialLog(db, initialAt, y, m);
+            })
+            .then(() => {
+              res.send({ ok: true, total: total })
+            })
+            .catch(err => {
+              res.send({ ok: false, message: err })
+            })
+        } else {
+          res.send({ ok: true, total: 0 });
+        }
+      })
+      .catch(err => {
+        res.send({ ok: false, message: err })
+      })
   } else {
     res.send({ ok: false, message: 'ข้อมูลไม่ครบถ้วน' })
   }
@@ -353,6 +334,7 @@ router.get('/print/:employeeCode/:startDate/:endDate', (req, res, next) => {
   let startDate = req.params.startDate;
   let endDate = req.params.endDate;
   let employeeCode = req.params.employeeCode;
+  let db = req.db;
 
   fse.ensureDirSync('./templates/html');
   fse.ensureDirSync('./templates/pdf');
@@ -368,18 +350,14 @@ router.get('/print/:employeeCode/:startDate/:endDate', (req, res, next) => {
   json.endDate = `${moment(endDate).format('D')} ${moment(endDate).locale('th').format('MMMM')} ${moment(endDate).get('year') + 543}`;
 
   json.items = [];
-  let _conn = null;
 
-  connection.getConnection()
-    .then((conn: IConnection) => {
-      _conn = conn;
-      return attendancesModel.getEmployeeDetail(conn, employeeCode);
-    })
+  attendancesModel.getEmployeeDetail(db, employeeCode)
     .then(results => {
       json.employee = results[0];
-      return attendancesModel.getEmployeeWorkDetail(_conn, employeeCode, startDate, endDate);
+      return attendancesModel.getEmployeeWorkDetail(db, employeeCode, startDate, endDate);
     })
     .then((results: any) => {
+      results = results[0];
       json.results = [];
       let startDateProcess = moment(startDate, 'YYYY-MM-DD').startOf('month').format('YYYY-MM-DD');
       const _startDate = +moment(startDateProcess).startOf('month').format('DD');
@@ -403,8 +381,6 @@ router.get('/print/:employeeCode/:startDate/:endDate', (req, res, next) => {
           obj.out03 = results[idx].out03 ? moment(results[idx].out03, 'HH:mm:ss').format('HH:mm') : '';
           obj.late = moment(results[idx].in01, 'HH:mm:ss').isAfter(moment('08:45:59', 'HH:mm:ss')) ? 'สาย' : '';
         }
-        // console.log(obj.work_date);
-        // console.log(obj);
         json.results.push(obj);
       }
 
@@ -463,29 +439,27 @@ router.get('/export-excel/:startDate/:endDate', (req, res, next) => {
 
   let startDate = req.params.startDate;
   let endDate = req.params.endDate;
+  let db = req.db;
 
   let excelFile = moment().format('x') + '.xls';
 
   if (startDate && endDate) {
-    connection.getConnection()
-      .then((conn: IConnection) => {
-        // console.log('Remove old data')
-        return attendancesModel.processSummary(conn, startDate, endDate)
-      })
+    attendancesModel.processSummary(db, startDate, endDate)
       .then((results: any) => {
         //res.send({ ok: true, rows: results });
         let options = {
           fields: [
-            'employee_code', 'employee_name', 'department_name',
+            'employee_code', 'employee_name', 'department_name', 'total_confirm',
             'total_work', 'total_late', 'total_exit_before', 'total_not_exit'
           ]
         };
         // force download
-        res.xls(excelFile, results, options);
+        res.xls(excelFile, results[0], options);
       })
       .catch(err => {
         res.send({ ok: false, message: err })
       })
+
   } else {
     res.send({ ok: false, message: 'กรุณาระบุวันที่' })
   }

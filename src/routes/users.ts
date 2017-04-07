@@ -16,13 +16,10 @@ import * as rimraf from 'rimraf';
 import * as _ from 'lodash';
 
 import { unitOfTime } from 'moment';
-import { IConnection } from 'mysql';
 
-import { Connection } from '../models/connection';
 import { AttendancesModel } from '../models/attendances';
 import { UserModel } from '../models/users';
 
-const connection = new Connection();
 const attendancesModel = new AttendancesModel();
 const userModel = new UserModel();
 
@@ -31,23 +28,22 @@ router.post('/changepass', (req, res, next) => {
   let employeeCode = req.decoded.employeeCode;
   let encPassword = crypto.createHash('md5').update(password).digest('hex');
 
-  connection.getConnection()
-    .then((conn: IConnection) => {
-      return userModel.changePassword(conn, employeeCode, encPassword)
-    })
+  let db = req.db;
+
+    userModel.changePassword(db, employeeCode, encPassword)
     .then((results: any) => {
       res.send({ ok: true })
     })
     .catch(err => {
       res.send({ ok: false, message: err });
     })
+
 });
 
 router.get('/work-allow', (req, res, next) => {
-  connection.getConnection()
-    .then((conn: IConnection) => {
-      return userModel.getWorkAllow(conn)
-    })
+  let db = req.db;
+
+userModel.getWorkAllow(db)
     .then((results: any) => {
       let data = [];
       results.forEach(v => {
@@ -56,7 +52,6 @@ router.get('/work-allow', (req, res, next) => {
         obj.name = `${moment(v.ym, 'YYYY-MM').locale('th').format('MMMM')} ${moment(v.ym, 'YYYY-MM').get('year') + 543}`;
         data.push(obj);
       });
-
       res.send({ ok: true, rows: data })
     })
     .catch(err => {
@@ -68,6 +63,7 @@ router.post('/work-save', (req, res, next) => {
   let works = req.body.works;
   let ym = req.body.ym;
   let employeeCode = req.decoded.employeeCode;
+  let db = req.db;
 
   let _yearMonth = moment(ym, 'YYYY-MM');
   let unitTime: unitOfTime.StartOf = 'month';
@@ -77,30 +73,24 @@ router.post('/work-save', (req, res, next) => {
   let _works = [];
   works.forEach(v => {
     let obj: any = [];
-    obj.push(employeeCode);
-    obj.push(v.work_date);
-    obj.push(v.work_type);
-    obj.push(v.is_process);
+    obj.employee_code = employeeCode;
+    obj.work_date = v.work_date;
+    obj.work_type = v.work_type;
+    obj.is_process = v.is_process;
     _works.push(obj);
   });
 
-  let _conn: IConnection;
-
-  connection.getConnection()
-    .then((conn: IConnection) => {
-      _conn = conn;
-      return userModel.removeOldWork(conn, employeeCode, start, end)
-    })
+userModel.removeOldWork(db, employeeCode, start, end)
     .then(() => {
-      return userModel.saveWork(_conn, _works);
+      return userModel.saveWork(db, _works);
     })
     .then(() => {
       console.log('remove old process')
-      return attendancesModel.removeOldProcessIndividual(_conn, employeeCode, start, end);
+      return attendancesModel.removeOldProcessIndividual(db, employeeCode, start, end);
     })
     .then(() => {
       console.log('process works')
-      return attendancesModel.doProcessIndividual(_conn, employeeCode, start, end);
+      return attendancesModel.doProcessIndividual(db, employeeCode, start, end);
     })
     .then(() => {
       res.send({ ok: true });
@@ -113,6 +103,7 @@ router.post('/work-save', (req, res, next) => {
 router.post('/work-summary', (req, res, next) => {
   let ym = req.body.ym;
   let employeeCode = req.decoded.employeeCode;
+  let db = req.db;
 
   let _yearMonth = moment(ym, 'YYYY-MM');
   let unitTime: unitOfTime.StartOf = 'month';
@@ -123,14 +114,10 @@ router.post('/work-summary', (req, res, next) => {
   const _startDate = +moment(_yearMonth).startOf('month').format('DD');
   const _endDate = +moment(_yearMonth).endOf('month').format('DD');
 
-  // console.log(start, end);
-
-  connection.getConnection()
-    .then((conn: IConnection) => {
-      return attendancesModel.getEmployeeWorkDetail(conn, employeeCode, start, end);
-    })
+  attendancesModel.getEmployeeWorkDetail(db, employeeCode, start, end)
     .then((results: any) => {
       let data = [];
+      results = results[0];
 
       for (let x = 0; x <= _endDate - 1; x++) {
 
@@ -140,7 +127,7 @@ router.post('/work-summary', (req, res, next) => {
         //  console.log(obj)
         obj.weekday = +moment(start, 'YYYY-MM-DD').add(x, 'days').format('d');
         let idx = _.findIndex(results, { work_date: obj.work_date });
-        console.log(idx, results[0].work_date);
+        // console.log(idx, results[0].work_date);
         if (idx > -1) {
           obj.in01 = results[idx].in01 ? moment(results[idx].in01, 'HH:mm:ss').format('HH:mm') : '';
           obj.in02 = results[idx].in02 ? moment(results[idx].in02, 'HH:mm:ss').format('HH:mm') : '';
@@ -154,21 +141,6 @@ router.post('/work-summary', (req, res, next) => {
         }
         data.push(obj);
       }
-
-      // results.forEach(v => {
-      //   let obj: any = {};
-      //   obj.work_date = `${moment(v.work_date).format('D')} ${moment(v.work_date).locale('th').format('MMM')} ${moment(v.work_date).get('year') + 543}`;
-      //   obj.in01 = v.in01 ? moment(v.in01, 'HH:mm:ss').format('HH:mm') : '';
-      //   obj.in02 = v.in02 ? moment(v.in02, 'HH:mm:ss').format('HH:mm') : '';
-      //   let _in03 = v.in03 || v.in03_2;
-      //   obj.in03 = _in03 ? moment(_in03, 'HH:mm:ss').format("HH:mm") : '';
-      //   obj.out01 = v.out01 ? moment(v.out01, 'HH:mm:ss').format('HH:mm') : '';
-      //   let _out02 = v.out02 || v.out02_2;
-      //   obj.out02 = _out02 ? moment(_out02, 'HH:mm:ss').format('HH:mm') : '';
-      //   obj.out03 = v.out03 ? moment(v.out03, 'HH:mm:ss').format('HH:mm') : '';
-      //   obj.late = moment(v.in01, 'HH:mm:ss').isAfter(moment('08:45:59', 'HH:mm:ss')) ? 'สาย' : '';
-      //   data.push(obj);
-      // });
 
       res.send({ ok: true, rows: data });
 
@@ -185,12 +157,9 @@ router.post('/work-detail', (req, res, next) => {
   let unitTime: unitOfTime.StartOf = 'month';
   let start = moment(_yearMonth).startOf(unitTime).format('YYYY-MM-DD');
   let end = moment(_yearMonth).endOf(unitTime).format('YYYY-MM-DD');
-  let _conn = null;
-  connection.getConnection()
-    .then((conn: IConnection) => {
-      _conn = conn;
-      return userModel.getWorkHistory(conn, employeeCode, start, end)
-    })
+  let db = req.db;
+
+  userModel.getWorkHistory(db, employeeCode, start, end)
     .then((results: any) => {
       if (results.length) {
         let data = [];
@@ -218,17 +187,17 @@ router.post('/work-detail', (req, res, next) => {
 
         let services = [];
         serviceDates.forEach(d => {
-          let obj = [];
-          obj.push(employeeCode);
-          obj.push(d);
-          obj.push('1');
-          obj.push('N');
+          let obj: any = {};
+          obj.employee_code = employeeCode;
+          obj.work_date = d;
+          obj.work_type = '1';
+          obj.is_process = 'N';
           services.push(obj);
         });
 
-        attendancesModel.saveInitial(_conn, services)
+        attendancesModel.saveInitial(db, services)
           .then(() => {
-            return userModel.getWorkHistory(_conn, employeeCode, start, end)
+            return userModel.getWorkHistory(db, employeeCode, start, end)
           })
           .then((results: any) => {
             let data = [];
@@ -262,6 +231,7 @@ router.get('/print/:ym', (req, res, next) => {
   let unitTime: unitOfTime.StartOf = 'month';
   let startDate = moment(_yearMonth).startOf('month').format('YYYY-MM-DD');
   let endDate = moment(_yearMonth).endOf('month').format('YYYY-MM-DD');
+  let db = req.db;
 
   fse.ensureDirSync('./templates/html');
   fse.ensureDirSync('./templates/pdf');
@@ -275,20 +245,15 @@ router.get('/print/:ym', (req, res, next) => {
   json.endDate = `${moment(endDate).format('D')} ${moment(endDate).locale('th').format('MMMM')} ${moment(endDate).get('year') + 543}`;
 
   json.items = [];
-  let _conn = null;
 
-  connection.getConnection()
-    .then((conn: IConnection) => {
-      _conn = conn;
-      return attendancesModel.getEmployeeDetail(conn, employeeCode);
-    })
+attendancesModel.getEmployeeDetail(db, employeeCode)
     .then(results => {
-      // console.log(results);
       json.employee = results[0];
-      return attendancesModel.getEmployeeWorkDetail(_conn, employeeCode, startDate, endDate);
+      return attendancesModel.getEmployeeWorkDetail(db, employeeCode, startDate, endDate);
     })
     .then((results: any) => {
-      // console.log(results);
+      results = results[0];
+
       json.results = [];
       const _startDate = +moment(_yearMonth).startOf('month').format('DD');
       const _endDate = +moment(_yearMonth).endOf('month').format('DD');
@@ -311,8 +276,7 @@ router.get('/print/:ym', (req, res, next) => {
           obj.out03 = results[idx].out03 ? moment(results[idx].out03, 'HH:mm:ss').format('HH:mm') : '';
           obj.late = moment(results[idx].in01, 'HH:mm:ss').isAfter(moment('08:45:59', 'HH:mm:ss')) ? 'สาย' : '';
         }
-        // console.log(obj.work_date);
-        console.log(obj);
+
         json.results.push(obj);
       }
 

@@ -1,116 +1,61 @@
-import { IConnection } from 'mysql';
 import * as moment from 'moment';
+import Knex = require('knex');
 
 export class AttendancesModel {
-  saveAttendances(connection: IConnection, data: any) {
-    return new Promise((resolve, reject) => {
-      let sql = `
-      insert into attendances(employee_code, checkin_date, checkin_time, imported_date)
-      values ?
-      `;
-      // run query
-      connection.query(sql, [data], (err, results) => {
-        if (err) reject(err);
-        else resolve(results);
-        // release connection
-        // connection.release();
-      });
-    });
+  saveAttendances(knex: Knex, data: any) {
+    return knex('attendances')
+      .insert(data);
   }
 
-  saveImportedLog(connection: IConnection, imported_at, start, end, total) {
-    return new Promise((resolve, reject) => {
-      let sql = `
-      insert into imported_logs(imported_at, start_date, end_date, total)
-      values (?, ?, ?, ?)
-      `;
-      // run query
-      connection.query(sql, [imported_at, start, end, total], (err, results) => {
-        if (err) reject(err);
-        else resolve();
-        // release connection
-        // connection.release();
+  saveImportedLog(knex: Knex, imported_at, start, end, total) {
+    return knex('imported_logs')
+      .insert({
+        imported_at: imported_at,
+        start_date: start,
+        end_date: end,
+        total: total
       });
-    });
   }
 
-  removeAttendances(connection: IConnection, start, end) {
-    return new Promise((resolve, reject) => {
-      let sql = `delete from attendances where checkin_date between ? and ?`;
-      // run query
-      connection.query(sql, [start, end], (err, results) => {
-        if (err) reject(err);
-        else resolve(results);
-        // release connection
-        // connection.release();
-      });
-    });
+  removeAttendances(knex: Knex, start, end) {
+    return knex('attendances')
+      .whereBetween('checkin_date', [start, end])
+      .del();
   }
 
-  getImportedLog(connection: IConnection) {
-    return new Promise((resolve, reject) => {
-      let sql = `select * from imported_logs order by imported_at desc limit 10`;
-      // run query
-      connection.query(sql, [], (err, results) => {
-        if (err) reject(err);
-        else resolve(results);
-        // release connection
-        // connection.release();
-      });
-    });
+  getImportedLog(knex: Knex) {
+    return knex('imported_logs')
+      .orderBy('imported_at', 'DESC')
+      .limit(10);
   }
 
-  getProcessLog(connection: IConnection) {
-    return new Promise((resolve, reject) => {
-      let sql = `select * from processed_logs order by process_at desc limit 10`;
-      // run query
-      connection.query(sql, [], (err, results) => {
-        if (err) reject(err);
-        else resolve(results);
-        // release connection
-        // connection.release();
-      });
-    });
+  getProcessLog(knex: Knex) {
+    return knex('processed_logs')
+      .orderBy('process_at', 'DESC')
+      .limit(10);
   }
 
-  getInitialLog(connection: IConnection) {
-    return new Promise((resolve, reject) => {
-      let sql = `select * from work_time_allow order by initial_at desc limit 10`;
-      // run query
-      connection.query(sql, [], (err, results) => {
-        if (err) reject(err);
-        else resolve(results);
-        // release connection
-        // connection.release();
-      });
-    });
+  getInitialLog(knex: Knex) {
+    return knex('work_time_allow')
+      .orderBy('initial_at', 'DESC')
+      .limit(10);
   }
 
-  removeOldProcess(connection: IConnection, start, end) {
-    return new Promise((resolve, reject) => {
-      let sql = `delete from t_attendances where work_date between ? and ?`;
-      // run query
-      connection.query(sql, [start, end], (err, results) => {
-        if (err) reject(err);
-        else resolve();
-      });
-    });
+  removeOldProcess(knex: Knex, start, end) {
+    return knex('t_attendances')
+      .whereBetween('work_date', [start, end])
+      .del();
   }
 
-  removeOldProcessIndividual(connection: IConnection, employeeCode, start, end) {
-    return new Promise((resolve, reject) => {
-      let sql = `delete from t_attendances where work_date between ? and ? and employee_code=?`;
-      // run query
-      connection.query(sql, [start, end, employeeCode], (err, results) => {
-        if (err) reject(err);
-        else resolve();
-      });
-    });
+  removeOldProcessIndividual(knex: Knex, employeeCode, start, end) {
+    return knex('t_attendances')
+      .whereBetween('work_date', [start, end])
+      .where('employee_code', employeeCode)
+      .del();
   }
 
-  getInitialEmployees(connection: IConnection, start, end) {
-    return new Promise((resolve, reject) => {
-      let sql = `
+  getInitialEmployees(knex: Knex, start, end) {
+    let sql = `
       select distinct employee_code 
       from employees as e 
       where employee_code not in (
@@ -119,79 +64,46 @@ export class AttendancesModel {
         where work_date between ? and ?
       )
       `;
-      // run query
-      connection.query(sql, [start, end], (err, results) => {
-        if (err) reject(err);
-        else resolve(results);
-        // release connection
-        // connection.release();
-      });
-    });
+    return knex.raw(sql, [start, end]);
   }
 
-  saveProcessLog(connection: IConnection, processAt, start, end, total) {
-    return new Promise((resolve, reject) => {
-      let sql = `
-      insert into processed_logs(process_at, start_date, end_date, total)
-      values(?, ?, ?, ?)
-      `;
-      // run query
-      connection.query(sql, [processAt, start, end, total], (err, results) => {
-        if (err) reject(err);
-        else resolve();
+  saveProcessLog(knex: Knex, processAt, start, end, total) {
+    return knex('processed_logs')
+      .insert({
+        process_at: processAt,
+        start_date: start,
+        end_date: end,
+        total: total
       });
-    });
   }
 
-  saveInitialLog(connection: IConnection, initialAt, year, month) {
-    return new Promise((resolve, reject) => {
-      let sql = `
-      insert into work_time_allow(initial_at, iyear, imonth)
-      values(?, ?, ?)
-      `;
-      // run query
-      connection.query(sql, [initialAt, year, month], (err, results) => {
-        if (err) reject(err);
-        else resolve();
+  saveInitialLog(knex: Knex, initialAt, year, month) {
+    return knex('work_time_allow')
+      .insert({
+        initial_at: initialAt,
+        iyear: year,
+        imonth: month
       });
-    });
   }
 
-  saveInitial(connection: IConnection, data) {
-    return new Promise((resolve, reject) => {
-      let sql = `
-      insert into work_type_attendances(employee_code, work_date, work_type, is_process)
-      values ?
-      `;
-      // run query
-      connection.query(sql, [data], (err, results) => {
-        if (err) reject(err);
-        else resolve(results);
-      });
-    });
+  saveInitial(knex: Knex, data) {
+    return knex('work_type_attendances')
+      .insert(data);
   }
 
-  getEmployeeDetail(connection: IConnection, employeeCode) {
-    return new Promise((resolve, reject) => {
-      let sql = `
-      select e.employee_code, e.employee_name,
-      d.name as department_name
-      from employees as e
-      left join departments as d on d.id=e.department_id
-      where e.employee_code=?
-      limit 1
-      `;
-      // run query
-      connection.query(sql, [employeeCode], (err, results) => {
-        if (err) reject(err);
-        else resolve(results);
-      });
-    });
+  getEmployeeDetail(knex: Knex, employeeCode) {
+
+    return knex('employees as e')
+      .select(
+      'e.employee_code', knex.raw('concat(e.first_name, " ", e.last_name) as employee_name'),
+      'd.name as department_name')
+      .leftJoin('l_sub_departments as d', 'd.id', 'e.sub_department_id')
+      .where('e.employee_code', employeeCode)
+      .limit(1);
   }
 
-  getEmployeeWorkDetail(connection: IConnection, employeeCode, start, end) {
-    return new Promise((resolve, reject) => {
-      let sql = `
+  getEmployeeWorkDetail(knex: Knex, employeeCode, start, end) {
+    let sql = `
       select date_format(t.work_date, '%Y-%m-%d') as work_date,
       (
         select in_morning from t_attendances where employee_code=t.employee_code and work_date=t.work_date
@@ -232,23 +144,24 @@ export class AttendancesModel {
       group by t.work_date
       order by t.work_date
       `;
-      // run query
-      connection.query(sql, [employeeCode, start, end], (err, results) => {
-        if (err) reject(err);
-        else resolve(results);
-      });
-    });
+    // run query
+    return knex.raw(sql, [employeeCode, start, end]);
   }
 
-  processSummary(connection: IConnection, start, end) {
+  processSummary(knex: Knex, start, end) {
 
     let workLateTime = process.env.WORK_LATE_TIME;
     let outBeforTime = process.env.OUT_BEFOR_TIME;
 
-    return new Promise((resolve, reject) => {
-      let sql = `
-          select e.employee_code, e.employee_name,
+    let sql = `
+          select e.employee_code, concat(e.first_name, " ", e.last_name) as employee_name,
           d.name as department_name,
+          (
+            select count(distinct concat(DATE_FORMAT(wt.work_date,'%Y%m%d'), wt.work_type)) as total 
+            from work_type_attendances as wt
+            where wt.employee_code=e.employee_code and wt.work_date between '${start}' and '${end}'
+            and wt.is_process='Y'
+          ) as total_confirm,
           (
             select count(distinct work_date) as total
             from t_attendances as t
@@ -300,21 +213,16 @@ export class AttendancesModel {
           ) as total_not_exit
 
           from employees as e
-          left join departments as d on d.id=e.department_id
-          order by e.employee_name
+          left join l_sub_departments as d on d.id=e.sub_department_id
+          order by e.first_name, e.last_name
       `;
-      // run query
-      connection.query(sql, [start, end], (err, results) => {
-        if (err) reject(err);
-        else resolve(results);
-      });
-    });
+
+    return knex.raw(sql);
   }
 
-  doProcess(connection: IConnection, start, end) {
-    return new Promise((resolve, reject) => {
-      let sql = `
-              insert into t_attendances(employee_code, work_date, work_type, in_morning,
+  doProcess(knex: Knex, start, end) {
+    let sql = `
+        insert into t_attendances(employee_code, work_date, work_type, in_morning,
         in_afternoon, in_evening, in_evening2, out_morning, out_afternoon, out_afternoon2, out_evening)
 
         select st.employee_code, st.work_date, st.work_type,
@@ -360,19 +268,14 @@ export class AttendancesModel {
         ) as out_evening
         from work_type_attendances as st
         where st.work_date between ? and ?
+        group by st.employee_code, st.work_date, st.work_type
         order by st.work_date
       `;
-      // run query
-      connection.query(sql, [start, end], (err, results) => {
-        if (err) reject(err);
-        else resolve(results);
-      });
-    });
+    return knex.raw(sql, [start, end]);
   }
 
-  doProcessIndividual(connection: IConnection, employeeCode, start, end) {
-    return new Promise((resolve, reject) => {
-      let sql = `
+  doProcessIndividual(knex: Knex, employeeCode, start, end) {
+    let sql = `
         insert into t_attendances(employee_code, work_date, work_type, in_morning,
         in_afternoon, in_evening, in_evening2, out_morning, out_afternoon, out_afternoon2, out_evening)
 
@@ -420,14 +323,10 @@ export class AttendancesModel {
         from work_type_attendances as st
         where st.work_date between ? and ?
         and st.employee_code=?
+        group by st.employee_code, st.work_date, st.work_type
         order by st.work_date
       `;
-      // run query
-      connection.query(sql, [start, end, employeeCode], (err, results) => {
-        if (err) reject(err);
-        else resolve(results);
-      });
-    });
+    return knex.raw(sql, [start, end, employeeCode]);
   }
 
 }

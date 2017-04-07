@@ -10,6 +10,9 @@ import * as bodyParser from 'body-parser';
 import * as cors from 'cors';
 import * as json2xls from 'json2xls';
 
+import { MySqlConnectionConfig  } from 'knex';
+import Knex = require('knex');
+
 import { Jwt } from './models/jwt';
 const jwt = new Jwt();
 
@@ -74,13 +77,11 @@ let adminAuth = (req, res, next) => {
     token = req.body.token;
   }
 
-  console.log(req.headers);
-  
   jwt.verify(token)
     .then((decoded: any) => {
       if (decoded.userType == '1') { // admin
         req.decoded = decoded;
-        console.log(req.decoded);
+        // console.log(req.decoded);
         next();
       } else {
         return res.send({ ok: false, error: 'Permission denied!' });
@@ -93,6 +94,31 @@ let adminAuth = (req, res, next) => {
       });
     });
 }
+
+/**
+DB_HOST=localhost
+DB_PORT=3306
+DB_NAME=ihrm
+DB_USER=root
+DB_PASSWORD=043789124
+ */
+let connection: MySqlConnectionConfig = {
+  host: process.env.DB_HOST,
+  port: process.env.DB_PORT,
+  database: process.env.DB_NAME,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD
+}
+
+let db = Knex({
+  client: 'mysql',
+  connection: connection
+});
+
+app.use((req, res, next) => {
+  req.db = db;
+  next();
+})
 
 app.use('/login', loginRoute);
 app.use('/admin', adminAuth, adminRoute);

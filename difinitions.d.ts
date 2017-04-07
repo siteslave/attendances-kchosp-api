@@ -4,6 +4,7 @@
 // Definitions: https://github.com/DefinitelyTyped/DefinitelyTyped
 
 import express = require('express');
+import Knex = require('knex');
 
 declare namespace multer {
     interface Field {
@@ -86,8 +87,7 @@ declare global {
         export interface Request {
             file: Multer.File;
             files: Multer.File[];
-            dbHOS: string;
-            dbHDC: string;
+            db: Knex;
             decoded: any
         }
 

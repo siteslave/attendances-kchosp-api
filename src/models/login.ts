@@ -1,30 +1,23 @@
 import { IConnection } from 'mysql';
 import * as moment from 'moment';
+import Knex = require('knex');
 
 export class LoginModel {
-  adminLogin(connection: IConnection, username: string, password: string) {
-    return new Promise((resolve, reject) => {
-      let sql = `
-      select id as employee_code, fullname from admin where username=? and password=?
-      `;
-      // run query
-      connection.query(sql, [username, password], (err, results) => {
-        if (err) reject(err);
-        else resolve(results);
+  adminLogin(knex: Knex, username: string, password: string) {
+    return knex('admin')
+      .select('id as employee_code', 'fullname')
+      .where({
+        username: username,
+        password: password
       });
-    });
   }
-  userLogin(connection: IConnection, username: string, password: string) {
-    return new Promise((resolve, reject) => {
-      let sql = `
-      select employee_code, employee_name as fullname 
-      from employees where employee_code=? and password=?
-      `;
-      // run query
-      connection.query(sql, [username, password], (err, results) => {
-        if (err) reject(err);
-        else resolve(results);
+
+  userLogin(knex: Knex, username: string, password: string) {
+    return knex('employees')
+      .select('employee_code', knex.raw('concat(first_name, " ", last_name) as fullname'))
+      .where({
+        employee_code: username,
+        password: password
       });
-    });
   }
 }
