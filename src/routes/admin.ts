@@ -54,24 +54,33 @@ router.post('/upload', upload.single('file'), (req, res, next) => {
     let _data = csvData.toString().split("\n");
     delete _data[0];
     let items = [];
-    
+
     _data.forEach((v, i) => {
       if (v) {
         let arrItem = v.toString().split("\t");
-        // console.log(arrItem);
+        // console.log('0', arrItem[0]);
+        // console.log(arrItem[1]);
+        // console.log(arrItem[2]);
+        // console.log(arrItem[3]);
+        // console.log(arrItem[4]);
+        // console.log(arrItem[5]);
+        // console.log(arrItem[6]);
+        // console.log(arrItem[7]);
+        // console.log(arrItem[8]);
         let employeeCode: any = parseInt(arrItem[2]);
         let checkinDate = moment(arrItem[8], 'YYYY/MM/DD HH:mm:ss').format('YYYY-MM-DD');
         let checkinTime = moment(arrItem[8], 'YYYY/MM/DD HH:mm:ss').format('HH:mm:ss');
         let importedDate = moment().format('YYYY-MM-DD HH:mm:ss');
+        let deviceCode = arrItem[1];
         // console.log(arrItem[8], checkinDate);        
-        
+
         if (employeeCode > 0) {
           let obj: any = {};
           obj.employee_code = employeeCode.toString();
           obj.checkin_date = checkinDate;
           obj.checkin_time = checkinTime;
           obj.imported_date = importedDate;
-
+          obj.device_code = deviceCode;
           // items.push(obj);
           // console.log(checkinDate);
           // console.log(startDate, endDate);
@@ -83,16 +92,14 @@ router.post('/upload', upload.single('file'), (req, res, next) => {
       }
 
     });
-
-    console.log(_data.length);
-    console.log(items.length);
     if (items.length) {
       let total = items.length;
 
-      attendancesModel.removeAttendances(db, startDate, endDate)
-        .then(() => {
-          return attendancesModel.saveAttendances(db, items);
-        })
+      // attendancesModel.removeAttendances(db, startDate, endDate)
+      //   .then(() => {
+      //     return 
+      //   })
+      attendancesModel.saveAttendances(db, items)
         .then((results: any) => {
           let importedAt = moment().format('YYYY-MM-DD HH:mm:ss');
           return attendancesModel.saveImportedLog(db, importedAt, startDate, endDate, total);
@@ -103,6 +110,7 @@ router.post('/upload', upload.single('file'), (req, res, next) => {
           res.send({ ok: true, total: total });
         })
         .catch(err => {
+          console.log(err);
           fse.removeSync(csvFile);
           res.send({ ok: false, message: err });
         });

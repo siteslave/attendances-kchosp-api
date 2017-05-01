@@ -3,8 +3,21 @@ import Knex = require('knex');
 
 export class AttendancesModel {
   saveAttendances(knex: Knex, data: any) {
-    return knex('attendances')
-      .insert(data);
+    let sqls = [];
+    data.forEach(v => {
+        let sql = `
+          INSERT INTO attendances
+          (employee_code, checkin_date, checkin_time, imported_date, device_code)
+          VALUES('${v.employee_code}', '${v.checkin_date}', '${v.checkin_time}', 
+          '${v.imported_date}', '${v.device_code}')
+          ON DUPLICATE KEY UPDATE
+          imported_date='${v.imported_date}'
+        `;
+      sqls.push(sql);
+    });
+
+    let queries = sqls.join(';');
+    return knex.raw(queries);
   }
 
   saveImportedLog(knex: Knex, imported_at, start, end, total) {
