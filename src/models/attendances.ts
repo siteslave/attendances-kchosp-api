@@ -99,6 +99,14 @@ export class AttendancesModel {
       });
   }
 
+  updateProcessStatus(knex: Knex, start, end) {
+    return knex('work_type_attendances')
+      .whereBetween('work_date', [start, end])
+      .update({
+        is_process: 'Y'
+      });
+  }
+
   saveInitial(knex: Knex, data) {
     return knex('work_type_attendances')
       .insert(data);
@@ -341,5 +349,7 @@ export class AttendancesModel {
       `;
     return knex.raw(sql, [start, end, employeeCode]);
   }
+
+
 
 }

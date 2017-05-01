@@ -250,6 +250,9 @@ router.post('/process', (req, res, next) => {
         return attendancesModel.saveProcessLog(db, processAt, start, end, total);
       })
       .then(() => {
+        return attendancesModel.updateProcessStatus(db, start, end);
+      })
+      .then(() => {
         res.send({ ok: true, total: total });
       })
       .catch(err => {
