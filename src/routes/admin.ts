@@ -390,7 +390,7 @@ router.get('/print/:employeeCode/:startDate/:endDate', (req, res, next) => {
           let _out02 = results[idx].out02 || results[idx].out02_2;
           obj.out02 = _out02 ? moment(_out02, 'HH:mm:ss').format('HH:mm') : '';
           obj.out03 = results[idx].out03 ? moment(results[idx].out03, 'HH:mm:ss').format('HH:mm') : '';
-          obj.late = moment(results[idx].in01, 'HH:mm:ss').isAfter(moment('08:45:59', 'HH:mm:ss')) ? 'สาย' : '';
+          obj.late = moment(results[idx].in01, 'HH:mm:ss').isAfter(moment(process.env.WORK_LATE_TIME, 'HH:mm:ss')) ? 'สาย' : '';
         }
         json.results.push(obj);
       }
