@@ -76,6 +76,7 @@ export class AttendancesModel {
         from work_type_attendances
         where work_date between ? and ?
       )
+      and is_active='Y'
       `;
     return knex.raw(sql, [start, end]);
   }
@@ -116,7 +117,7 @@ export class AttendancesModel {
 
     return knex('employees as e')
       .select(
-      'e.employee_code', knex.raw('concat(e.first_name, " ", e.last_name) as employee_name'),
+      'e.id' ,'e.employee_code', knex.raw('concat(e.first_name, " ", e.last_name) as employee_name'),
       'd.name as department_name')
       .leftJoin('l_sub_departments as d', 'd.id', 'e.sub_department_id')
       .where('e.employee_code', employeeCode)
@@ -231,10 +232,17 @@ export class AttendancesModel {
             and t.out_morning is null
             and t.work_date between '${start}' and '${end}'
             and t.employee_code=e.employee_code
-          ) as total_not_exit
+          ) as total_not_exit,
+          (
+            select count(distinct m.meeting_date) as total
+            from meeting_approve_dates as m
+            where m.employee_id=e.id
+            and m.meeting_date between '${start}' and '${end}'
+          ) as meeting_total
 
           from employees as e
           left join l_sub_departments as d on d.id=e.sub_department_id
+          where e.is_active='Y'
           order by e.first_name, e.last_name
       `;
 
@@ -340,7 +348,7 @@ export class AttendancesModel {
           select checkin_time from attendances where employee_code=st.employee_code
           and checkin_date=date_add(st.work_date, interval 1 day)
           and checkin_time between '08:00:00' and '09:45:59' and st.work_type='3' order by checkin_time limit 1
-        ) as out_evening
+        ) as out_evening,
         from work_type_attendances as st
         where st.work_date between ? and ?
         and st.employee_code=?
@@ -348,6 +356,17 @@ export class AttendancesModel {
         order by st.work_date
       `;
     return knex.raw(sql, [start, end, employeeCode]);
+  }
+  
+  getMeetingTotal(knex: Knex, employeeId, start, end) {
+    let sql = `
+    select count(distinct m.meeting_date) as total
+    from meeting_approve_dates as m
+    where m.employee_id=?
+    and m.meeting_date between ? and ?
+    `;
+
+    return knex.raw(sql, [employeeId, start, end]);
   }
 
 

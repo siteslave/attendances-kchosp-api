@@ -4,6 +4,7 @@ import * as express from 'express';
 import * as multer from 'multer';
 
 import * as path from 'path';
+import * as co from 'co-express';
 import * as fs from 'fs';
 import * as moment from 'moment';
 import * as fse from 'fs-extra';
@@ -204,27 +205,27 @@ router.get('/initial-logs', (req, res, next) => {
     });
 });
 
-router.post('/process-summary', (req, res, next) => {
+router.post('/process-summary', co(async(req, res, next) => {
   let start = req.body.start;
   let end = req.body.end;
   let db = req.db;
 
   if (start && end) {
-    attendancesModel.processSummary(db, start, end)
-      .then((results: any) => {
-        res.send({ ok: true, rows: results[0] });
-      })
-      .catch(err => {
-        res.send({ ok: false, message: err })
-      })
+    try {
+      let results = await attendancesModel.processSummary(db, start, end);
+      res.send({ ok: true, rows: results[0] });
+    } catch (error) {
+      console.log(error);
+      res.send({ ok: false, msg: error.message });
+    }
 
   } else {
     res.send({ ok: false, message: 'ข้อมูลไม่ครบถ้วน' })
   }
 
-});
+}));
 
-router.post('/process', (req, res, next) => {
+router.post('/process', co(async (req, res, next) => {
   let y = req.body.y;
   let m = req.body.m;
   let db = req.db;
@@ -237,35 +238,27 @@ router.post('/process', (req, res, next) => {
     let end = moment(_yearMonth).endOf(unitTime).format('YYYY-MM-DD');
     let total = 0;
 
-    attendancesModel.removeOldProcess(db, start, end)
-      .then((results: any) => {
-        // console.log('removed!')
-        return attendancesModel.doProcess(db, start, end)
-      })
-      .then((results: any) => {
-        // console.log(results);
-        let processAt = moment().format('YYYY-MM-DD HH:mm:ss');
-        total = results[0].affectedRows;
-        // console.log(processAt, start, end, total)
-        return attendancesModel.saveProcessLog(db, processAt, start, end, total);
-      })
-      .then(() => {
-        return attendancesModel.updateProcessStatus(db, start, end);
-      })
-      .then(() => {
-        res.send({ ok: true, total: total });
-      })
-      .catch(err => {
-        console.log(err);
-        res.send({ ok: false, message: err })
-      })
+    try {
+      await attendancesModel.removeOldProcess(db, start, end);
+      let result = await attendancesModel.doProcess(db, start, end);
+      let processAt = moment().format('YYYY-MM-DD HH:mm:ss');
+      total = result[0].affectedRows;
+
+      await attendancesModel.saveProcessLog(db, processAt, start, end, total);;
+      await attendancesModel.updateProcessStatus(db, start, end);
+
+      res.send({ ok: true, total: total });
+    } catch (error) {
+      res.send({ ok: false, msg: error.message });
+    }
+
   } else {
     res.send({ ok: false, message: 'ข้อมูลไม่ครบถ้วน' })
   }
 
-});
+}));
 
-router.post('/initial', (req, res, next) => {
+router.post('/initial', co(async (req, res, next) => {
   const y = req.body.y;
   const m = req.body.m;
   const db = req.db;
@@ -282,66 +275,58 @@ router.post('/initial', (req, res, next) => {
 
     let total = 0;
 
-    // console.log(req.body);    
-    // get employees
-    attendancesModel.getInitialEmployees(db, start, end)
-      .then((results: any) => {
+    try {
+      let results = await attendancesModel.getInitialEmployees(db, start, end);
+      total = results[0].length;
 
-        total = results[0].length;
+      if (results[0].length) {
+        results[0].forEach(v => {
+          employees.push(v.employee_code);
+        });
 
-        if (results[0].length) {
-          results[0].forEach(v => {
-            employees.push(v.employee_code);
-          });
-
-          let _endDate = moment(end, 'YYYY-MM-DD').get('date');
-          let serviceDates = [];
-          for (let i = 0; i <= _endDate - 1; i++) {
-            let _date = moment(start, 'YYYY-MM-DD').add(i, "days").format("YYYY-MM-DD");
-            serviceDates.push(_date);
-          }
-
-          employees.forEach((v) => {
-            /**
-             * employee_code, work_date, work_type, is_process
-             */
-            serviceDates.forEach(d => {
-              let obj: any = {};
-              obj.employee_code = v;
-              obj.work_date = d;
-              obj.work_type = '1';
-              obj.is_process = 'N';
-              services.push(obj);
-            });
-          });
-          attendancesModel.saveInitial(db, services)
-            .then((results: any) => {
-              console.log(results);
-              let initialAt = moment().format('YYYY-MM-DD HH:mm:ss');
-              return attendancesModel.saveInitialLog(db, initialAt, y, m);
-            })
-            .then(() => {
-              res.send({ ok: true, total: total })
-            })
-            .catch(err => {
-              res.send({ ok: false, message: err })
-            })
-        } else {
-          res.send({ ok: true, total: 0 });
+        let _endDate = moment(end, 'YYYY-MM-DD').get('date');
+        let serviceDates = [];
+        for (let i = 0; i <= _endDate - 1; i++) {
+          let _date = moment(start, 'YYYY-MM-DD').add(i, "days").format("YYYY-MM-DD");
+          serviceDates.push(_date);
         }
-      })
-      .catch(err => {
-        res.send({ ok: false, message: err })
-      })
+
+        employees.forEach((v) => {
+          /**
+           * employee_code, work_date, work_type, is_process
+           */
+          serviceDates.forEach(d => {
+            let obj: any = {};
+            obj.employee_code = v;
+            obj.work_date = d;
+            obj.work_type = '1';
+            obj.is_process = 'N';
+            services.push(obj);
+          });
+        });
+
+        await attendancesModel.saveInitial(db, services);
+        let initialAt = moment().format('YYYY-MM-DD HH:mm:ss');
+        await attendancesModel.saveInitialLog(db, initialAt, y, m);
+
+        res.send({ ok: true, total: total });
+
+      } else {
+        res.send({ ok: false, msg: 'ไม่พบข้อมูลที่ต้องการประมวลผล' })
+      }
+    } catch (error) {
+      res.send({ ok: false, msg: error.message });
+    }
+
   } else {
     res.send({ ok: false, message: 'ข้อมูลไม่ครบถ้วน' })
   }
 
-});
+}));
 
 //------ print pdf ------//
 
-router.get('/print/:employeeCode/:startDate/:endDate', (req, res, next) => {
+router.get('/print/:employeeCode/:startDate/:endDate', co(async (req, res, next) => {
   let startDate = req.params.startDate;
   let endDate = req.params.endDate;
   let employeeCode = req.params.employeeCode;
@@ -362,89 +347,88 @@ router.get('/print/:employeeCode/:startDate/:endDate', (req, res, next) => {
 
   json.items = [];
 
-  attendancesModel.getEmployeeDetail(db, employeeCode)
-    .then(results => {
-      json.employee = results[0];
-      return attendancesModel.getEmployeeWorkDetail(db, employeeCode, startDate, endDate);
-    })
-    .then((results: any) => {
-      results = results[0];
-      json.results = [];
-      let startDateProcess = moment(startDate, 'YYYY-MM-DD').startOf('month').format('YYYY-MM-DD');
-      const _startDate = +moment(startDateProcess).startOf('month').format('DD');
-      const _endDate = +moment(startDateProcess).endOf('month').format('DD');
+  let results = await attendancesModel.getEmployeeDetail(db, employeeCode);
+  json.employee = results[0];
 
-      for (let x = 0; x <= _endDate - 1; x++) {
-        const obj: any = {};
-        obj.work_date = moment(startDateProcess, 'YYYY-MM-DD').add(x, 'days').format('YYYY-MM-DD');
-        obj.thdate = `${moment(startDateProcess, 'YYYY-MM-DD').add(x, 'days').format('D')} ${moment(startDateProcess, 'YYYY-MM-DD').add(x, 'days').locale('th').format('MMM')} ${moment(startDateProcess, 'YYYY-MM-DD').add(x, 'days').get('year') + 543}`;
-        //  console.log(obj.thdate)
-        obj.weekday = +moment(startDateProcess, 'YYYY-MM-DD').add(x, 'days').format('d');
-        let idx = _.findIndex(results, { work_date: obj.work_date });
-        if (idx > -1) {
-          obj.in01 = results[idx].in01 ? moment(results[idx].in01, 'HH:mm:ss').format('HH:mm') : '';
-          obj.in02 = results[idx].in02 ? moment(results[idx].in02, 'HH:mm:ss').format('HH:mm') : '';
-          let _in03 = results[idx].in03 || results[idx].in03_2;
-          obj.in03 = _in03 ? moment(_in03, 'HH:mm:ss').format("HH:mm") : '';
-          obj.out01 = results[idx].out01 ? moment(results[idx].out01, 'HH:mm:ss').format('HH:mm') : '';
-          let _out02 = results[idx].out02 || results[idx].out02_2;
-          obj.out02 = _out02 ? moment(_out02, 'HH:mm:ss').format('HH:mm') : '';
-          obj.out03 = results[idx].out03 ? moment(results[idx].out03, 'HH:mm:ss').format('HH:mm') : '';
-          obj.late = moment(results[idx].in01, 'HH:mm:ss').isAfter(moment(process.env.WORK_LATE_TIME, 'HH:mm:ss')) ? 'สาย' : '';
-        }
-        json.results.push(obj);
-      }
+  let rs2 = await attendancesModel.getEmployeeWorkDetail(db, employeeCode, startDate, endDate);
 
-      gulp.task('html', (cb) => {
-        return gulp.src('./templates/work-time.pug')
-          .pipe(gulpData(() => {
-            return json;
-          }))
-          .pipe(gulpPug())
-          .pipe(gulp.dest(destPath));
-      });
+  let resultsData = rs2[0];
+  json.results = [];
+  let startDateProcess = moment(startDate, 'YYYY-MM-DD').startOf('month').format('YYYY-MM-DD');
+  const _startDate = +moment(startDateProcess).startOf('month').format('DD');
+  const _endDate = +moment(startDateProcess).endOf('month').format('DD');
 
-      gulp.task('pdf', ['html'], () => {
-        let html = fs.readFileSync(destPath + '/work-time.html', 'utf8')
-        let options = {
-          format: 'A4',
-          // height: "8in",
-          // width: "6in",
-          orientation: "portrait",
-          // footer: {
-          //   height: "10mm",
-          //   contents: '<span style="color: #444;"><small>Printed: ' + new Date() + '</small></span>'
-          // }
-        }
+  for (let x = 0; x <= _endDate - 1; x++) {
+    const obj: any = {};
+    obj.work_date = moment(startDateProcess, 'YYYY-MM-DD').add(x, 'days').format('YYYY-MM-DD');
+    obj.thdate = `${moment(startDateProcess, 'YYYY-MM-DD').add(x, 'days').format('D')} ${moment(startDateProcess, 'YYYY-MM-DD').add(x, 'days').locale('th').format('MMM')} ${moment(startDateProcess, 'YYYY-MM-DD').add(x, 'days').get('year') + 543}`;
+    //  console.log(obj.thdate)
+    obj.weekday = +moment(startDateProcess, 'YYYY-MM-DD').add(x, 'days').format('d');
+    let idx = _.findIndex(resultsData, { work_date: obj.work_date });
+    if (idx > -1) {
+      obj.in01 = resultsData[idx].in01 ? moment(resultsData[idx].in01, 'HH:mm:ss').format('HH:mm') : '';
+      obj.in02 = resultsData[idx].in02 ? moment(resultsData[idx].in02, 'HH:mm:ss').format('HH:mm') : '';
+      let _in03 = resultsData[idx].in03 || resultsData[idx].in03_2;
+      obj.in03 = _in03 ? moment(_in03, 'HH:mm:ss').format("HH:mm") : '';
+      obj.out01 = resultsData[idx].out01 ? moment(resultsData[idx].out01, 'HH:mm:ss').format('HH:mm') : '';
+      let _out02 = resultsData[idx].out02 || resultsData[idx].out02_2;
+      obj.out02 = _out02 ? moment(_out02, 'HH:mm:ss').format('HH:mm') : '';
+      obj.out03 = resultsData[idx].out03 ? moment(resultsData[idx].out03, 'HH:mm:ss').format('HH:mm') : '';
+      obj.late = moment(resultsData[idx].in01, 'HH:mm:ss').isAfter(moment(process.env.WORK_LATE_TIME, 'HH:mm:ss')) ? 'สาย' : '';
+    }
+    json.results.push(obj);
+  }
 
-        // let employee_name = `${json.employee.first_name} ${json.employee.last_name}`;
-        // let pdfName = path.join(destPath, employee.fullname + '-' + moment().format('x') + '.pdf');
-        var pdfName = `./templates/pdf/attendances-${json.employee.employee_name}-${moment().format('x')}.pdf`;
+  let rs3 = await attendancesModel.getMeetingTotal(db, json.employee.id, startDate, endDate);
+  console.log(rs3[0][0]);
+  
 
-        pdf.create(html, options).toFile(pdfName, (err, resp) => {
-          if (err) {
-            rimraf.sync(destPath);
-            fse.removeSync(pdfName);
-            res.send({ ok: false, message: err });
-          } else {
-            res.download(pdfName, function () {
-              rimraf.sync(destPath);
-              fse.removeSync(pdfName);
-            });
-          }
+  json.totalMeeting = rs3[0][0].total || 0;
+
+  gulp.task('html', (cb) => {
+    return gulp.src('./templates/work-time.pug')
+      .pipe(gulpData(() => {
+        return json;
+      }))
+      .pipe(gulpPug())
+      .pipe(gulp.dest(destPath));
+  });
+
+  gulp.task('pdf', ['html'], () => {
+    let html = fs.readFileSync(destPath + '/work-time.html', 'utf8')
+    let options = {
+      format: 'A4',
+      // height: "8in",
+      // width: "6in",
+      orientation: "portrait",
+      // footer: {
+      //   height: "10mm",
+      //   contents: '<span style="color: #444;"><small>Printed: ' + new Date() + '</small></span>'
+      // }
+    }
+
+    // let employee_name = `${json.employee.first_name} ${json.employee.last_name}`;
+    // let pdfName = path.join(destPath, employee.fullname + '-' + moment().format('x') + '.pdf');
+    var pdfName = `./templates/pdf/attendances-${json.employee.employee_name}-${moment().format('x')}.pdf`;
+
+    pdf.create(html, options).toFile(pdfName, (err, resp) => {
+      if (err) {
+        rimraf.sync(destPath);
+        fse.removeSync(pdfName);
+        res.send({ ok: false, message: err });
+      } else {
+        res.download(pdfName, function () {
+          rimraf.sync(destPath);
+          fse.removeSync(pdfName);
         });
-
-      });
-
-      gulp.start('pdf');
-
-    })
-
-    .catch(err => {
-      res.send({ ok: false, message: err });
+      }
     });
 
-});
+  });
+
+  gulp.start('pdf');
+
+}));
 
 router.get('/export-excel/:startDate/:endDate', (req, res, next) => {
 
@@ -461,7 +445,7 @@ router.get('/export-excel/:startDate/:endDate', (req, res, next) => {
         let options = {
           fields: [
             'employee_code', 'employee_name', 'department_name', 'total_confirm',
-            'total_work', 'total_late', 'total_exit_before', 'total_not_exit'
+            'total_work', 'total_late', 'total_exit_before', 'total_not_exit', 'meeting_total'
           ]
         };
         // force download

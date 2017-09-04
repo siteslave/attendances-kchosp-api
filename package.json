@@ -7,6 +7,7 @@
   },
   "dependencies": {
     "body-parser": "^1.14.2",
+    "co-express": "^2.0.0",
     "cookie-parser": "^1.4.0",
     "cors": "^2.8.1",
     "dotenv": "^4.0.0",
