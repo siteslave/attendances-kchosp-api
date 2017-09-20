@@ -348,7 +348,7 @@ export class AttendancesModel {
           select checkin_time from attendances where employee_code=st.employee_code
           and checkin_date=date_add(st.work_date, interval 1 day)
           and checkin_time between '08:00:00' and '09:45:59' and st.work_type='3' order by checkin_time limit 1
-        ) as out_evening,
+        ) as out_evening
         from work_type_attendances as st
         where st.work_date between ? and ?
         and st.employee_code=?

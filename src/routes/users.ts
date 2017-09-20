@@ -15,6 +15,8 @@ import * as gulpPug from 'gulp-pug';
 import * as rimraf from 'rimraf';
 import * as _ from 'lodash';
 
+import * as co from 'co-express';
+
 import { unitOfTime } from 'moment';
 
 import { AttendancesModel } from '../models/attendances';
@@ -59,7 +61,7 @@ userModel.getWorkAllow(db)
     })
 });
 
-router.post('/work-save', (req, res, next) => {
+router.post('/work-save', co(async(req, res, next) => {
   let works = req.body.works;
   let ym = req.body.ym;
   let employeeCode = req.decoded.employeeCode;
@@ -72,7 +74,7 @@ router.post('/work-save', (req, res, next) => {
 
   let _works = [];
   works.forEach(v => {
-    let obj: any = [];
+    let obj: any = {};
     obj.employee_code = employeeCode;
     obj.work_date = v.work_date;
     obj.work_type = v.work_type;
@@ -80,25 +82,18 @@ router.post('/work-save', (req, res, next) => {
     _works.push(obj);
   });
 
-userModel.removeOldWork(db, employeeCode, start, end)
-    .then(() => {
-      return userModel.saveWork(db, _works);
-    })
-    .then(() => {
-      console.log('remove old process')
-      return attendancesModel.removeOldProcessIndividual(db, employeeCode, start, end);
-    })
-    .then(() => {
-      console.log('process works')
-      return attendancesModel.doProcessIndividual(db, employeeCode, start, end);
-    })
-    .then(() => {
-      res.send({ ok: true });
-    })
-    .catch(err => {
-      res.send({ ok: false, message: err });
-    })
-});
+  console.log(_works);
+  
+  try {
+    await userModel.removeOldWork(db, employeeCode, start, end)
+    await userModel.saveWork(db, _works);
+    await attendancesModel.removeOldProcessIndividual(db, employeeCode, start, end);
+    await attendancesModel.doProcessIndividual(db, employeeCode, start, end);
+    res.send({ ok: true });
+  } catch (error) {
+    res.send({ ok: false, message: error.message });
+  }
+}));
 
 router.post('/work-summary', (req, res, next) => {
   let ym = req.body.ym;
